@@ -149,3 +149,35 @@ function handleOnPaymentFailed(response) {
 }
 
 startCheckout();
+
+const subscriptionPaymentButton = document.getElementById("subscription-payment-button");
+
+if (subscriptionPaymentButton) {
+    subscriptionPaymentButton.addEventListener("click", async () => {
+        try {
+            console.log("Calling /api/subscription-payment");
+
+            const response = await fetch("/api/subscription-payment", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            });
+
+            const data = await response.json();
+
+            console.log("Subscription payment response:", data);
+
+            if (data.resultCode === "Authorised") {
+                window.location.href = "/result/success";
+            } else if (data.resultCode === "Pending" || data.resultCode === "Received") {
+                window.location.href = "/result/pending";
+            } else {
+                window.location.href = "/result/failed";
+            }
+        } catch (error) {
+            console.error("Subscription payment failed:", error);
+            window.location.href = "/result/error";
+        }
+    });
+}
