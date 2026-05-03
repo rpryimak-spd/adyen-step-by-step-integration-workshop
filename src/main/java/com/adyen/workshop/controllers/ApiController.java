@@ -3,6 +3,7 @@ package com.adyen.workshop.controllers;
 import com.adyen.Service;
 import com.adyen.model.RequestOptions;
 import com.adyen.model.checkout.*;
+import com.adyen.workshop.Storage;
 import com.adyen.workshop.configurations.ApplicationConfiguration;
 import com.adyen.service.checkout.PaymentsApi;
 import com.adyen.service.exception.ApiException;
@@ -15,9 +16,6 @@ import org.springframework.web.servlet.view.RedirectView;
 import java.io.IOException;
 import java.util.UUID;
 
-/**
- * REST controller for using the Adyen payments API.
- */
 @RestController
 public class ApiController {
     private final Logger log = LoggerFactory.getLogger(ApiController.class);
@@ -113,38 +111,70 @@ public class ApiController {
 
         PaymentCompletionDetails paymentCompletionDetails = new PaymentCompletionDetails();
 
-        // Handle redirect result or payload
-        if (redirectResult != null && !redirectResult.isEmpty()) {
-            // For redirect, you are redirected to an Adyen domain to complete the 3DS2 challenge
-            // After completing the 3DS2 challenge, you get the redirect result from Adyen in the returnUrl
-            // We then pass on the redirectResult
-            paymentCompletionDetails.redirectResult(redirectResult);
-        } else if (payload != null && !payload.isEmpty()) {
-            paymentCompletionDetails.payload(payload);
+        return new RedirectView("/result/error");
+    }
+
+    // TOKENIZATION: create token with zero-auth
+    @PostMapping("/api/subscription-create")
+    public ResponseEntity<PaymentResponse> subscriptionCreate(@RequestBody PaymentRequest body)
+            throws IOException, ApiException {
+
+        var paymentRequest = new PaymentRequest();
+        paymentRequest.setMerchantAccount(applicationConfiguration.getAdyenMerchantAccount());
+        paymentRequest.setAmount(new Amount().currency("EUR").value(0L)); // zero-auth
+        paymentRequest.setChannel(PaymentRequest.ChannelEnum.WEB);
+        paymentRequest.setPaymentMethod(body.getPaymentMethod());
+        paymentRequest.setReference("sub-create-" + UUID.randomUUID());
+        paymentRequest.setReturnUrl("http://localhost:8080/handleShopperRedirect");
+        paymentRequest.setStorePaymentMethod(true);
+        paymentRequest.setShopperReference(Storage.SHOPPER_REFERENCE);
+        paymentRequest.setShopperInteraction(PaymentRequest.ShopperInteractionEnum.ECOMMERCE);
+        paymentRequest.setRecurringProcessingModel(PaymentRequest.RecurringProcessingModelEnum.SUBSCRIPTION);
+
+        var requestOptions = new RequestOptions();
+        requestOptions.setIdempotencyKey(UUID.randomUUID().toString());
+
+        log.info("Subscription create request {}", paymentRequest);
+        var response = paymentsApi.payments(paymentRequest, requestOptions);
+        log.info("Subscription create response {}", response);
+
+        return ResponseEntity.ok(response);
+    }
+
+    // TOKENIZATION: charge using stored token
+    @PostMapping("/api/subscription-payment")
+    public ResponseEntity<?> subscriptionPayment() throws IOException, ApiException {
+        if (Storage.STORED_PAYMENT_METHOD_ID == null) {
+            return ResponseEntity.badRequest().body("No stored token found yet. Complete /api/subscription-create and wait for webhook.");
         }
 
-        paymentDetailsRequest.setDetails(paymentCompletionDetails);
+        var paymentRequest = new PaymentRequest();
+        paymentRequest.setMerchantAccount(applicationConfiguration.getAdyenMerchantAccount());
+        paymentRequest.setAmount(new Amount().currency("EUR").value(500L)); // €5.00 monthly
+        paymentRequest.setReference("sub-charge-" + UUID.randomUUID());
+        paymentRequest.setShopperReference(Storage.SHOPPER_REFERENCE);
+        paymentRequest.setShopperInteraction(PaymentRequest.ShopperInteractionEnum.CONTAUTH);
+        paymentRequest.setRecurringProcessingModel(PaymentRequest.RecurringProcessingModelEnum.SUBSCRIPTION);
+        paymentRequest.setPaymentMethod(
+                new CheckoutPaymentMethod(
+                        new StoredPaymentMethodDetails().storedPaymentMethodId(Storage.STORED_PAYMENT_METHOD_ID)
+                )
+        );
 
-        var paymentsDetailsResponse = paymentsApi.paymentsDetails(paymentDetailsRequest);
-        log.info("PaymentsDetailsResponse {}", paymentsDetailsResponse);
+        var requestOptions = new RequestOptions();
+        requestOptions.setIdempotencyKey(UUID.randomUUID().toString());
 
-        // Handle response and redirect user accordingly
-        var redirectURL = "http://localhost:8080/result/"; // Update your url here by replacing `http://localhost:8080` with where your application is hosted (if needed)
-        switch (paymentsDetailsResponse.getResultCode()) {
-            case AUTHORISED:
-                redirectURL += "success";
-                break;
-            case PENDING:
-            case RECEIVED:
-                redirectURL += "pending";
-                break;
-            case REFUSED:
-                redirectURL += "failed";
-                break;
-            default:
-                redirectURL += "error";
-                break;
-        }
-        return new RedirectView(redirectURL + "?reason=" + paymentsDetailsResponse.getResultCode());
+        log.info("Subscription payment request {}", paymentRequest);
+        var response = paymentsApi.payments(paymentRequest, requestOptions);
+        log.info("Subscription payment response {}", response);
+
+        return ResponseEntity.ok(response);
+    }
+
+    // Workshop-level cancel: delete locally stored token
+    @PostMapping("/api/subscription-cancel")
+    public ResponseEntity<String> subscriptionCancel() {
+        Storage.STORED_PAYMENT_METHOD_ID = null;
+        return ResponseEntity.ok("Stored subscription token removed.");
     }
 }

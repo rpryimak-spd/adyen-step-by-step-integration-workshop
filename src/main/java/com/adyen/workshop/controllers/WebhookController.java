@@ -3,6 +3,7 @@ package com.adyen.workshop.controllers;
 import com.adyen.model.notification.NotificationRequest;
 import com.adyen.model.notification.NotificationRequestItem;
 import com.adyen.util.HMACValidator;
+import com.adyen.workshop.Storage;
 import com.adyen.workshop.configurations.ApplicationConfiguration;
 import org.apache.coyote.Response;
 import org.slf4j.Logger;
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 import java.security.SignatureException;
+import java.util.Map;
+import java.util.Optional;
 
 /**
  * REST controller for receiving Adyen webhook notifications
@@ -37,29 +40,39 @@ public class WebhookController {
 
     @PostMapping("/webhooks")
     public ResponseEntity<String> webhooks(@RequestBody String json) throws Exception {
-        log.info("Received: {}", json);
-        var notificationRequest = NotificationRequest.fromJson(json);
-        var notificationRequestItem = notificationRequest.getNotificationItems().stream().findFirst();
+        NotificationRequest notificationRequest = NotificationRequest.fromJson(json);
+        Optional<NotificationRequestItem> itemOptional =
+                notificationRequest.getNotificationItems().stream().findFirst();
 
-        try {
-            NotificationRequestItem item = notificationRequestItem.get();
-
-            // Step 16 - Validate the HMAC signature using the ADYEN_HMAC_KEY
-            if (!hmacValidator.validateHMAC(item, this.applicationConfiguration.getAdyenHmacKey())) {
-                log.warn("Could not validate HMAC signature for incoming webhook message: {}", item);
-                return ResponseEntity.unprocessableEntity().build();
-            }
-
-            // Success, log it for now
-            log.info("Received webhook with event {}", item.toString());
-
-            return ResponseEntity.accepted().build();
-        } catch (SignatureException e) {
-            // Handle invalid signature
-            return ResponseEntity.unprocessableEntity().build();
-        } catch (Exception e) {
-            // Handle all other errors
-            return ResponseEntity.status(500).build();
+        if (itemOptional.isEmpty()) {
+            return ResponseEntity.ok("[accepted]");
         }
+
+        NotificationRequestItem item = itemOptional.get();
+
+        boolean valid = hmacValidator.validateHMAC(item, applicationConfiguration.getAdyenHmacKey());
+        if (!valid) {
+            throw new IllegalArgumentException("Invalid HMAC signature");
+        }
+
+        log.info("Received webhook eventCode={}, success={}", item.getEventCode(), item.isSuccess());
+
+        // Workshop-compatible: read token from AUTHORISATION webhook additionalData
+        if ("AUTHORISATION".equals(item.getEventCode()) && item.isSuccess()) {
+            Map<String, String> additionalData = item.getAdditionalData();
+            if (additionalData != null) {
+                String token = additionalData.get("recurring.recurringDetailReference");
+                if (token == null) {
+                    token = additionalData.get("tokenization.storedPaymentMethodId");
+                }
+
+                if (token != null && !token.isBlank()) {
+                    Storage.STORED_PAYMENT_METHOD_ID = token;
+                    log.info("Stored token from webhook: {}", token);
+                }
+            }
+        }
+
+        return ResponseEntity.ok("[accepted]");
     }
 }
