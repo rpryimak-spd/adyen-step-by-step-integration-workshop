@@ -181,3 +181,29 @@ if (subscriptionPaymentButton) {
         }
     });
 }
+
+const subscriptionCancelButton = document.getElementById("subscription-cancel-button");
+
+if (subscriptionCancelButton) {
+    subscriptionCancelButton.addEventListener("click", async () => {
+        try {
+            console.log("Calling /api/subscription-cancel");
+
+            const response = await fetch("/api/subscription-cancel", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+            });
+
+            const text = await response.text();
+
+            console.log("Subscription cancel response:", text);
+
+            alert("Subscription cancelled locally.");
+        } catch (error) {
+            console.error("Subscription cancel failed:", error);
+            alert("Could not cancel subscription.");
+        }
+    });
+}

@@ -3,6 +3,8 @@ package com.adyen.workshop.controllers;
 import com.adyen.Service;
 import com.adyen.model.RequestOptions;
 import com.adyen.model.checkout.*;
+
+import com.adyen.service.checkout.RecurringApi;
 import com.adyen.workshop.Storage;
 import com.adyen.workshop.configurations.ApplicationConfiguration;
 import com.adyen.service.checkout.PaymentsApi;
@@ -22,13 +24,14 @@ public class ApiController {
 
     private final ApplicationConfiguration applicationConfiguration;
     private final PaymentsApi paymentsApi;
-    private final Service service;
+    private final RecurringApi recurringApi;
 
     public ApiController(ApplicationConfiguration applicationConfiguration,
-                         PaymentsApi paymentsApi, Service service) {
+                         PaymentsApi paymentsApi,
+                         RecurringApi recurringApi) {
         this.applicationConfiguration = applicationConfiguration;
         this.paymentsApi = paymentsApi;
-        this.service = service;
+        this.recurringApi = recurringApi;
     }
 
     // Step 0
@@ -145,6 +148,7 @@ public class ApiController {
     @PostMapping("/api/subscription-payment")
     public ResponseEntity<?> subscriptionPayment() throws IOException, ApiException {
         if (Storage.STORED_PAYMENT_METHOD_ID == null) {
+            log.info("Subscription is missing(deleted)");
             return ResponseEntity.badRequest().body("No stored token found yet. Complete /api/subscription-create and wait for webhook.");
         }
 
@@ -173,8 +177,23 @@ public class ApiController {
 
     // Workshop-level cancel: delete locally stored token
     @PostMapping("/api/subscription-cancel")
-    public ResponseEntity<String> subscriptionCancel() {
+    public ResponseEntity<String> subscriptionCancel() throws IOException, ApiException {
+        if (Storage.STORED_PAYMENT_METHOD_ID == null) {
+            return ResponseEntity.badRequest().body("No stored token found.");
+        }
+
+        String token = Storage.STORED_PAYMENT_METHOD_ID;
+
+        recurringApi.deleteTokenForStoredPaymentDetails(
+                token,
+                Storage.SHOPPER_REFERENCE,
+                applicationConfiguration.getAdyenMerchantAccount()
+        );
+
         Storage.STORED_PAYMENT_METHOD_ID = null;
-        return ResponseEntity.ok("Stored subscription token removed.");
+
+        log.info("Deleted stored payment method from Adyen: {}", token);
+
+        return ResponseEntity.ok("Subscription token deleted from Adyen.");
     }
 }
