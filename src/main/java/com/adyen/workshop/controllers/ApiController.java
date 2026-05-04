@@ -4,11 +4,17 @@ import com.adyen.Service;
 import com.adyen.model.RequestOptions;
 import com.adyen.model.checkout.*;
 
+import com.adyen.model.payment.CancelRequest;
+import com.adyen.model.payment.CaptureRequest;
+import com.adyen.model.payment.RefundRequest;
+import com.adyen.service.checkout.ModificationsApi;
 import com.adyen.service.checkout.RecurringApi;
 import com.adyen.workshop.Storage;
 import com.adyen.workshop.configurations.ApplicationConfiguration;
 import com.adyen.service.checkout.PaymentsApi;
+import com.adyen.model.checkout.PaymentAmountUpdateRequest;
 import com.adyen.service.exception.ApiException;
+import org.apache.catalina.Store;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -25,13 +31,18 @@ public class ApiController {
     private final ApplicationConfiguration applicationConfiguration;
     private final PaymentsApi paymentsApi;
     private final RecurringApi recurringApi;
+    private final ModificationsApi modificationsApi;
+
+    private Long lastAmount;
 
     public ApiController(ApplicationConfiguration applicationConfiguration,
                          PaymentsApi paymentsApi,
-                         RecurringApi recurringApi) {
+                         RecurringApi recurringApi,
+                         ModificationsApi modificationsApi) {
         this.applicationConfiguration = applicationConfiguration;
         this.paymentsApi = paymentsApi;
         this.recurringApi = recurringApi;
+        this.modificationsApi = modificationsApi;
     }
 
     // Step 0
@@ -202,5 +213,127 @@ public class ApiController {
         log.info("Deleted stored payment method from Adyen: {}", token);
 
         return ResponseEntity.ok("Subscription token deleted from Adyen.");
+    }
+
+    @PostMapping("/api/preauthorisation")
+    public ResponseEntity<PaymentResponse> preauthorisation(@RequestBody PaymentRequest body)
+            throws IOException, ApiException {
+
+        var paymentRequest = new PaymentRequest();
+
+        paymentRequest.setMerchantAccount(applicationConfiguration.getAdyenMerchantAccount());
+        paymentRequest.setAmount(new Amount().currency("EUR").value(10000L));
+        lastAmount = 10000L;
+        paymentRequest.setChannel(PaymentRequest.ChannelEnum.WEB);
+        paymentRequest.setPaymentMethod(body.getPaymentMethod());
+        paymentRequest.setReference("preauth-" + UUID.randomUUID());
+        paymentRequest.setReturnUrl("http://localhost:8080/handleShopperRedirect");
+
+        // Important: manual capture. Authorise now, capture later.
+        paymentRequest.setCaptureDelayHours(0);
+
+        var requestOptions = new RequestOptions();
+        requestOptions.setIdempotencyKey(UUID.randomUUID().toString());
+
+        var response = paymentsApi.payments(paymentRequest, requestOptions);
+
+        if (response.getPspReference() != null) {
+            Storage.LATEST_PRE_AUTH_PSP_REFERENCE = response.getPspReference();
+            log.info("Stored preauth PSP reference: {}", Storage.LATEST_PRE_AUTH_PSP_REFERENCE);
+        }
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/api/modify-amount")
+    public ResponseEntity<?> modifyAmount() throws IOException, ApiException {
+        if (Storage.LATEST_PRE_AUTH_PSP_REFERENCE == null) {
+            return ResponseEntity.badRequest().body("No pre-authorised payment found.");
+        }
+
+        var amountUpdateRequest = new PaymentAmountUpdateRequest();
+        amountUpdateRequest.setMerchantAccount(applicationConfiguration.getAdyenMerchantAccount());
+        amountUpdateRequest.setAmount(new Amount().currency("EUR").value(15000L));
+        lastAmount = 15000L;
+        amountUpdateRequest.setReference("modify-amount-" + UUID.randomUUID());
+
+        var response = modificationsApi.updateAuthorisedAmount(
+                Storage.LATEST_PRE_AUTH_PSP_REFERENCE,
+                amountUpdateRequest
+        );
+
+        log.info("Modify amount response {}", response);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/api/capture")
+    public ResponseEntity<?> capture() throws IOException, ApiException {
+        if (Storage.LATEST_PRE_AUTH_PSP_REFERENCE == null) {
+            log.info("No stored token found.");
+            return ResponseEntity.badRequest().body("No pre-authorised payment found.");
+        }
+
+        var captureRequest = new PaymentCaptureRequest();
+        captureRequest.setMerchantAccount(applicationConfiguration.getAdyenMerchantAccount());
+        captureRequest.setAmount(new Amount().currency("EUR").value(lastAmount));
+        captureRequest.setReference("capture-" + UUID.randomUUID());
+
+        var response = modificationsApi.captureAuthorisedPayment(
+                Storage.LATEST_PRE_AUTH_PSP_REFERENCE,
+                captureRequest,
+                new RequestOptions().idempotencyKey("UUID")
+        );
+
+        log.info("Capture response {}", response);
+
+        Storage.CAPTURED_PSP_REFERENCE = response.getPspReference();
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/api/cancel")
+    public ResponseEntity<?> cancelPreauthorisation() throws IOException, ApiException {
+        if (Storage.LATEST_PRE_AUTH_PSP_REFERENCE == null) {
+            log.info("No stored token found.");
+            return ResponseEntity.badRequest().body("No pre-authorised payment found.");
+        }
+
+        var cancelRequest = new StandalonePaymentCancelRequest();
+        cancelRequest.setMerchantAccount(applicationConfiguration.getAdyenMerchantAccount());
+        cancelRequest.setReference("cancel-" + UUID.randomUUID());
+        cancelRequest.setReference(Storage.LATEST_PRE_AUTH_PSP_REFERENCE);
+
+        var response = modificationsApi.cancelAuthorisedPayment(
+                cancelRequest,
+                new RequestOptions().idempotencyKey("UUID")
+        );
+
+        log.info("Cancel response {}", response);
+
+//        Storage.LATEST_PRE_AUTH_PSP_REFERENCE = null;
+
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/api/refund")
+    public ResponseEntity<?> refund() throws IOException, ApiException {
+        if (Storage.LATEST_PRE_AUTH_PSP_REFERENCE == null) {
+            return ResponseEntity.badRequest().body("No original payment PSP reference found.");
+        }
+
+        var refundRequest = new PaymentRefundRequest();
+        refundRequest.setMerchantAccount(applicationConfiguration.getAdyenMerchantAccount());
+        refundRequest.setAmount(new Amount().currency("EUR").value(lastAmount));
+        refundRequest.setReference("refund-" + UUID.randomUUID());
+
+        var response = modificationsApi.refundCapturedPayment(
+                Storage.LATEST_PRE_AUTH_PSP_REFERENCE,
+                refundRequest
+        );
+
+        log.info("Refund response {}", response);
+
+        return ResponseEntity.ok(response);
     }
 }

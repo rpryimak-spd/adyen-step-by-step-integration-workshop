@@ -1,0 +1,44 @@
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout}">
+<head>
+    <title>Pre-authorisation</title>
+
+    <link rel="stylesheet"
+          href="https://checkoutshopper-test.adyen.com/checkoutshopper/sdk/6.33.0/adyen.css"/>
+</head>
+
+<body>
+<div layout:fragment="content" id="payment-page">
+    <div id="clientKey" class="hidden" th:text="${clientKey}"></div>
+
+    <div class="container">
+        <h2>Pre-authorisation</h2>
+
+        <div class="payment-container">
+            <div id="payment" class="payment"></div>
+
+            <button id="modify-amount-button" class="btn btn-warning mt-3">
+                Modify amount
+            </button>
+
+            <button id="capture-button" class="btn btn-primary mt-3">
+                Capture pre-authorised payment
+            </button>
+
+            <button id="cancel-button" class="btn btn-danger mt-3">
+                Cancel pre-authorisation
+            </button>
+
+            <button id="refund-button" class="btn btn-secondary mt-3">
+                Refund captured payment
+            </button>
+        </div>
+    </div>
+
+    <script src="https://checkoutshopper-test.adyen.com/checkoutshopper/sdk/6.33.0/adyen.js"></script>
+    <script src="/adyenWebPreauth.js"></script>
+</div>
+</body>
+</html>

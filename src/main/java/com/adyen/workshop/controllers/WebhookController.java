@@ -57,6 +57,8 @@ public class WebhookController {
 
         log.info("Received webhook eventCode={}, success={}", item.getEventCode(), item.isSuccess());
 
+        log.info("Webhook={}", item);
+
         // Workshop-compatible: read token from AUTHORISATION webhook additionalData
         if ("AUTHORISATION".equals(item.getEventCode()) && item.isSuccess()) {
             Map<String, String> additionalData = item.getAdditionalData();
@@ -71,6 +73,14 @@ public class WebhookController {
                     log.info("Stored token from webhook: {}", token);
                 }
             }
+        }
+
+        if ("AUTHORISATION_ADJUSTMENT".equals(item.getEventCode())) {
+            log.info("Authorisation adjustment webhook success={}, pspReference={}, originalReference={}",
+                    item.isSuccess(),
+                    item.getPspReference(),
+                    item.getOriginalReference()
+            );
         }
 
         return ResponseEntity.ok("[accepted]");

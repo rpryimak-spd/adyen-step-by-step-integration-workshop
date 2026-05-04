@@ -55,4 +55,10 @@ public class ViewController {
         model.addAttribute("clientKey", this.applicationConfiguration.getAdyenClientKey());
         return "subscription";
     }
+
+    @GetMapping("/preauth")
+    public String preauth(Model model) {
+        model.addAttribute("clientKey", this.applicationConfiguration.getAdyenClientKey());
+        return "preauth";
+    }
 }
