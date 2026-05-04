@@ -49,4 +49,10 @@ public class ViewController {
         model.addAttribute("clientKey", this.applicationConfiguration.getAdyenClientKey());
         return "redirect";
     }
+
+    @GetMapping("/subscription")
+    public String subscription(Model model) {
+        model.addAttribute("clientKey", this.applicationConfiguration.getAdyenClientKey());
+        return "subscription";
+    }
 }

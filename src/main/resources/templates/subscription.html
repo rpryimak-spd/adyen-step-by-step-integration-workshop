@@ -1,0 +1,39 @@
+<html lang="en"
+      xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout}">
+<head>
+    <title>Subscription</title>
+</head>
+<body>
+<div layout:fragment="content" id="payment-page">
+
+    <!-- Required data -->
+    <div id="clientKey" class="hidden" th:text="${clientKey}"></div>
+
+    <div class="container">
+        <h2>Subscription (Tokenization)</h2>
+
+        <div class="payment-container">
+            <div id="payment" class="payment"></div>
+
+            <!-- Charge button -->
+            <button id="subscription-payment-button" class="btn btn-primary mt-3">
+                Charge saved subscription
+            </button>
+
+            <!-- Cancel button -->
+            <button id="subscription-cancel-button" class="btn btn-danger mt-3">
+                Cancel subscription
+            </button>
+        </div>
+    </div>
+
+    <!-- Adyen JS -->
+    <script src="https://checkoutshopper-test.adyen.com/checkoutshopper/sdk/6.33.0/adyen.js"></script>
+
+    <!-- Your subscription-specific JS -->
+    <script src="/adyenWebSubscription.js"></script>
+
+</div>
+</body>
