@@ -169,7 +169,13 @@ public class ApiController {
         requestOptions.setIdempotencyKey(UUID.randomUUID().toString());
 
         log.info("Subscription payment request {}", paymentRequest);
-        var response = paymentsApi.payments(paymentRequest, requestOptions);
+        PaymentResponse response;
+        try {
+            response = paymentsApi.payments(paymentRequest, requestOptions);
+        } catch (ApiException e) {
+            log.error("Subscription payment failed: {}", e.getError());
+            return ResponseEntity.badRequest().body("Subscription payment failed: " + e.getError().getMessage());
+        }
         log.info("Subscription payment response {}", response);
 
         return ResponseEntity.ok(response);
@@ -190,7 +196,8 @@ public class ApiController {
                 applicationConfiguration.getAdyenMerchantAccount()
         );
 
-        Storage.STORED_PAYMENT_METHOD_ID = null;
+//        Optional, decided to comment this in order to have error from Adyen
+//        Storage.STORED_PAYMENT_METHOD_ID = null;
 
         log.info("Deleted stored payment method from Adyen: {}", token);
 
